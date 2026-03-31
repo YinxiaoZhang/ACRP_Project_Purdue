@@ -1,0 +1,146 @@
+# Copyright 2026 Yinxiao Zhang
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from dataclasses import dataclass
+import heapq
+from typing import Dict, List, Tuple, Optional
+from enum import IntEnum
+
+class Size(IntEnum):
+    COMPACT = 1
+    STANDARD = 2
+    OVERSIZED = 3
+
+@dataclass
+class Vehicle:
+    plate_number: str
+    size: Size  # compact, standard, oversized
+
+@dataclass
+class Stall:
+    stall_id: str
+    size: Size  # compact, standard, oversized
+    node: str
+    available: bool = True
+
+class ParkingAssignmentModule:
+    def __init__(self, graph: Dict[str, List[Tuple[str, int]]], stalls: List[Stall], entry_node: str):
+        self.graph = graph
+        self.stalls = stalls
+        self.entry_node = entry_node
+
+    def can_fit(self, vehicle_size: Size, stall_size: Size) -> bool:
+        return stall_size >= vehicle_size
+
+    def get_candidate_stalls(self, vehicle: Vehicle) -> List[Stall]:
+        return [
+            stall for stall in self.stalls
+            if stall.available and self.can_fit(vehicle.size, stall.size)
+        ]
+
+    def _run_dijkstra_from_entry(self) -> Tuple[Dict[str, float], Dict[str, str]]:
+        pq = [(0, self.entry_node)]
+        distances = {self.entry_node: 0}
+        previous = {}
+        visited = set()
+
+        while pq:
+            current_dist, current_node = heapq.heappop(pq)
+
+            if current_node in visited:
+                continue
+            visited.add(current_node)
+
+            for neighbor, weight in self.graph.get(current_node, []):
+                new_dist = current_dist + weight
+                if neighbor not in distances or new_dist < distances[neighbor]:
+                    distances[neighbor] = new_dist
+                    previous[neighbor] = current_node
+                    heapq.heappush(pq, (new_dist, neighbor))
+        
+        return distances, previous
+
+    def _reconstruct_path(self, previous: Dict[str, str], start: str, goal: str) -> List[str]:
+        path = []
+        node = goal
+        while node != start:
+            path.append(node)
+            node = previous[node]
+        path.append(start)
+        path.reverse()
+        return path
+
+    def select_best_stall(self, vehicle: Vehicle) -> Optional[Tuple[Stall, List[str], float]]:
+        candidates = self.get_candidate_stalls(vehicle)
+        if not candidates:
+            return None
+
+        all_distances, all_previous = self._run_dijkstra_from_entry()
+
+        best_stall = None
+        min_dist = float("inf")
+
+        for stall in candidates:
+            dist = all_distances.get(stall.node, float("inf"))
+            if dist < min_dist:
+                min_dist = dist
+                best_stall = stall
+
+        if best_stall and min_dist != float("inf"):
+            path = self._reconstruct_path(all_previous, self.entry_node, best_stall.node)
+            return best_stall, path, min_dist
+        
+        return None
+
+    def assign_stall(self, vehicle: Vehicle):
+        result = self.select_best_stall(vehicle)
+        if result is None:
+            return {"status": "no_available_stall"}
+
+        stall, path, distance = result
+        stall.available = False
+
+        return {
+            "status": "assigned",
+            "vehicle": vehicle.plate_number,
+            "stall_id": stall.stall_id,
+            "stall_size": stall.size.name,
+            "route": path,
+            "distance": distance,
+        }
+
+
+#Test Case
+if __name__ == "__main__":
+    airport_graph = {
+        "ENTRY": [("A", 2)],
+        "A": [("B", 3), ("C", 4)],
+        "B": [("S1", 2)],
+        "C": [("S2", 2), ("S3", 3)],
+        "S1": [], "S2": [], "S3": [],
+    }
+
+    airport_stalls = [
+        Stall("S1", Size.COMPACT, "S1"),
+        Stall("S2", Size.STANDARD, "S2"),
+        Stall("S3", Size.OVERSIZED, "S3"),
+    ]
+
+    module = ParkingAssignmentModule(airport_graph, airport_stalls, entry_node="ENTRY")
+
+    test_vehicle = Vehicle("ACRP-2026", Size.STANDARD)
+    assignment_result = module.assign_stall(test_vehicle)
+    
+    print("--- Assignment Result ---")
+    print(assignment_result)
