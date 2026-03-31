@@ -139,7 +139,7 @@ if __name__ == "__main__":
 
     module = ParkingAssignmentModule(airport_graph, airport_stalls, entry_node="ENTRY")
 
-    test_vehicle = Vehicle("ACRP-2026", Size.STANDARD)
+    test_vehicle = Vehicle("Test-2026", Size.STANDARD)
     assignment_result = module.assign_stall(test_vehicle)
     
     print("--- Assignment Result ---")
